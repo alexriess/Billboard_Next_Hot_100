@@ -1,0 +1,211 @@
+---
+output: html_document
+url: {file:///Users/User/Documents/Methods_Dietrich/Methods_Final/Real_final.html}
+---
+##### Alex Riess
+##### May 8
+
+## Determining Music Genre Based on Billboard's Year-End Hot 100
+
+
+Intro
+
+Knowing what people are going to listen to next is a very powerful thing. In the music industry, data analysis is used in a variety of ways. Whether it is locating new areas to put concert halls, analyzing certain demographics of listeners, helping expand the listenership for an artist, or explaining to a corporation what the next big artist is going to look like, using data is lethal. Corporations can then take the proactive steps to welcome up-and-coming artists into their home before they make it big. There are plenty of factors that play into what people will be listening to and who the next big star is, but narrowing the analysis down to what genre will be the future attraction further facilitates the analysis. 
+
+
+## scraping data
+```{r}
+setwd("~/Documents/Methods_Dietrich/Methods_Final")
+
+genre_data <- read.csv("methods_genre.csv")
+library(rvest)
+
+url <- "https://www.billboard.com/charts/year-end/2019/hot-100-songs"
+# load the html of the webpage into R
+webpage <- read_html(url)
+webpage
+
+years <- c("2020", "2019", "2018","2017", "2016", "2015")
+
+urls <- paste0("https://www.billboard.com/charts/year-end/",years,"/hot-100-songs")
+urls
+```
+
+## combining data
+```{r}
+#create space for data to fit in as it loops
+empty_list <- vector(mode="list", length = 6)#length of urls
+
+#loop through to get elements from each site
+for(i in 1:length(urls)){
+ webpage <- read_html(urls[i])
+
+ #view the elements on the webpage
+nodes <- webpage %>% html_node("body") 
+children <- nodes %>% html_children()
+children
+ 
+ 
+  rank <- nodes %>% 
+    xml2::xml_find_all("//div[contains(@class, 'ye-chart-item__rank')]") %>% html_text() %>% as.numeric()
+  rank
+  
+  artist <- nodes %>%
+    xml2::xml_find_all("//div[contains(@class, 'ye-chart-item__artist')]") %>%   html_text()
+  artist
+  
+  song <- nodes %>%
+    xml2::xml_find_all("//div[contains(@class, 'ye-chart-item__title')]") %>% html_text()
+  song
+  
+  #plugging each years data into data frame
+  empty_list[[i]] <- data.frame(rank=rank, artist=artist, song=song)
+  
+}
+  
+  
+#bind the lists 
+billboard_charts <- rbind(empty_list[[1]], empty_list[[2]], empty_list[[3]], empty_list[[4]], empty_list[[5]], empty_list[[6]])
+```
+
+I chose to formulate a study that learns from billboard song charts to predict the likeliness of where genres will fall within the rankings of the charts. Using web scraping, I brought in my data from Billboard’s Year-End Hot 100 Songs (2021 Billboard Media, LLC). The website has a list of the top 100 songs from 2020. Considering I wanted to use multiple years of data, I traversed through subsites until the 2015, collecting 600 songs, their rankings, and artist names. With this information, I used a music-genre generator website to categorize my 600 songs into their genres (Chosic). I typed in a specific song and the website would use Spotify web API to tell what the genre was. It also provided a popularity, happiness, danceability, energy, acousticness, instrumentalness, liveness, and speechiness ranking. For my purposes, I focused on the genre labeling, and put it into a dataset. Of course, there are hundreds of niche genres and subgenres out there, but I was able to condense the music from the charts into 7 distinct genres: 
+
+  1) Alternative/indie
+  2) country
+  3) dance/electronic dance 
+  4) Latin
+  5) pop
+  6) R&B
+  7) rap 
+
+I had a few songs that were K-pop, soundtracks, and songs for kids, but they were too scarce to contribute to the overall study. I was then able to attach the 7 genres to the end of my billboard_charts dataset. I then used the algorithm, K-Nearest Neighbor (KNN) to formulate my outcome. Further details are explained in “Methods”.
+
+```{r, results = FALSE}
+#deleting row 487
+#to fit the two data frames 
+genre_data <- genre_data[-487, ]
+genre_data
+
+#creating year_end_genre to put
+#genre data into
+billboard_charts$year_end_genre <- genre_data$genre
+billboard_charts
+```
+
+
+```{r}
+#considering only like 1 value with these categories and 
+#possible outliers in training data, 
+#They were dropped
+drop_genres <- c("kids", "soundtrack", "k-pop")
+billboard_charts <- billboard_charts[!billboard_charts$year_end_genre %in% drop_genres, ]
+
+#converting my new column to factor form instead of char form
+#in order to do work on it
+billboard_charts$year_end_genre <- as.factor(billboard_charts$year_end_genre)
+class(billboard_charts$year_end_genre)
+```
+
+I am interested in the year_end_genre variable, as well as the rank variable. My outcome is a list of predicted genres, as well as a summary of prediction results involving the genre names. At the end of the study, I also included my own Billboard’s Year-End top 100 (replacing song names with genre of course). 
+
+
+##Predicting genre with machine learning model
+```{r}
+#install.packages("caret")
+library(caret)
+```
+
+Methods
+
+I am predicting genre using machine learning. Machine learning involves me using algorithms to train the computer to recognize patterns. My study is a supervised style of machine learning. A supervised algorithm relies on input data to learn a function that produces an appropriate output when given new data. For example, picture a computer as a kid. The kid is shown several pictures and is told which one is a cow and which one isn’t. After a while, the kid picks up on the features of what a cow looks like, and is able to distinguish a cow based on his/her learnings. In my case, I will be giving the computer genre and ranking data to learn off of. 
+
+```{r}
+?sample
+
+#choosing which observations to use for testing/training:
+#divide it 2/3
+nrow(billboard_charts)*0.7
+
+# getting a random sample:
+#sample() draws randomly from it
+training_rows <- sample(nrow(billboard_charts), size=418) 
+#this will get a random sample (418 rows)
+
+#pulling out the rows in training_rows
+#training is two-thirds the random data set
+training <- billboard_charts[training_rows,]
+training
+```
+
+```{r}
+#training the algorithm
+##specify three things: predictors (x), outcome(y), type of algorithm (method)
+knn_fit <- train(x=data.frame(rank = training[,1]), y=as.factor(training$year_end_genre), method="knn")
+
+knn_fit
+```
+
+Supervised is divided into training and testing data, in which the KNN algorithm is used. In my study, I divided the billboard_charts data into 2/3 through a random sample. In the music industry (or any industry really) the majority of the data should be put to training for a better test. The randomness is to eliminate trends and bias. 
+
+The training data is 418 rows brought out to be the guinea pig for KNN. “The KNN algorithm assume that similar things exist in close proximity” (Harrison 1). The algorithm is checking to see what observations the target is close to. “K” is however many neighbors it checks. It then calibrates what value of k gets me the best predictions. In my training dataset, the algorithm looks for the songs with the most similar rankings and checks the genres of those songs. It attempts to learn where each genre falls in the rankings. It then gives its accuracy on how well it undergoes this process through values of k. The value of k that gives me the best accuracy is 9. Once the training is done and my KNN algorithm is working, I then create testing data to truly see how accurate the algorithm is. This is simply the remaining pieces of data (the 1/3 left over). I use the algorithm to generate predictions of genre, which result in testing. A great way to see how KNN did, would be through a confusion matrix. It compares the actual list of genres from the billboard_charts(year_end_genres) to the predictions. This can help spot trends in both the algorithm’s techniques and the data’s trends. 
+
+```{r}
+#how accurate is this knn machine learning algorithm?
+#give it some testing data now NOT in the training rows pulled before
+testing <- billboard_charts[!1:nrow(billboard_charts)%in%training_rows,]
+
+#get the predictions from the model:
+#give us predictions of genre
+?predict
+predictions <- predict(knn_fit, newdata=data.frame(rank=testing[,1]))
+predictions
+# we want to compare the actual year_end_genre to the predictions
+#see how it did on the test
+?confusionMatrix
+confusionMatrix(data=predictions, reference=as.factor(testing$year_end_genre))
+
+```
+
+Results
+
+*The numbers below can vary based on loading in the chunks. 
+*The basic idea remains
+
+The KNN machine learning algorithm gave the best accuracy with 9 neighbors, being around 40%. The algorithm did surprisingly well, considering it was not a binary variable. Using a binary variable, the accuracy would have been higher because the base of learning is already at a fifty percent chance, giving a leg up in the machine’s capabilities. The algorithm was able to check the genres of songs based on other songs with similar rankings, and predict the right genre around 40% of the time. When running this test, both the year_end_genre variable and the rank variable in the training data were crucial because in order to check similarities, you need the rank numbers. 
+	
+The predictions were an interesting visual. After applying KNN to the testing data, the predictions were already showing patterns. The most obvious pattern is that pop has been the main genre in the billboard charts for the past 6 years. Another pattern is that while R&B trickles into the lineup, rap is the second most liked genre and country is the third most liked genre throughout the years (separated by a large margin to the most liked: Pop). After running the test multiple times, Alternative/Indie, electronic and rap were rarely (if ever) predicted. While these genres are super popular in the world, they haven’t been competing with the pop-style powerhouse throughout the years. The powerhouse’s attractiveness is shown clearer in the confusion matrix.
+
+Right off the bat, we notice the KNN algorithm really likes pop. In the matrix, 127 predictions were pop out of 178 predictions total, regardless of them being right or wrong. And as the study shows, the algorithm stuck to its guns. Rap was supposed to be the correct answer 35 times, but instead was mistaken for pop. About 48% of the 127 that were predicted pop, ended up being other genres. The overall accuracy of the matrix is around 43%, which seems low. However, this was to be expected from the algorithm’s overall accuracy rate (k=9: 41%) The study leaves room for improvement, but it still tells a story of how popular pop truly is. 
+
+```{r}
+#what billboard year_end top 100 genres will look like in a typical year
+my_year_end <- predict(knn_fit, newdata=data.frame(rank=1:100))
+my_year_end
+```
+
+I even spotted a trend in creating my own Billboard’s Year-End Hot 100. Based on what my algorithm learned, my own version is what the top 100 song genres would look like in a typical year. After creating multiple different versions, country is always towards the end of the list. This tells us that country music is consistently in the billboard charts, but generally the least popular genre out of all the relevant genres on the charts. Looking at my version of the hot 100 is neat because it is based on multiple years before now and can be a good indicator for multiple years ahead. Pop will still be killing the game, but there will always be a large fanbase of rap and country. Machine learning helped me come up with analyses for common themes in the past, and for the future as well. 
+
+
+Conclusion
+
+Although the algorithm may be vague, it is catching a trend on how frequent and non-frequent the genres are occurring and where they are occurring in the rankings. It may not be completely accurate, but it is persistent and accurate enough to form educated conclusions on people’s listening habits from the past 6 years. Like I mentioned before, the action of figuring out what genres people have been drawn in to is lethal. This study, and other studies surrounding the music world, can be of service to anyone who has ever enjoyed music. The music industry is constantly looking into data to help their artists and companies grow. By determining what genres people are listening to, and what they will continue to listen to, this study can be a simplistic source for the industry to build off of. 
+
+
+What Would I Do Different Next Time?
+
+If I were to do this experiment again, I would collect more data and create more variety of genres. I may even tie in more variables to help with accurately predicting certain genres. I would also rename the genre values to help distinguish them more and spot trends easier.  
+
+
+
+
+
+Works Cited
+
+Hot 100 Songs – Year-End. (2020). Retrieved from https://www.billboard.com/charts/year-end/2020/hot-100-songs
+
+Music Genre Finder: Check genres of any Song or Artist. (2021, April 1). Retrieved from https://www.chosic.com/music-genre-finder/?artist=6PvvGcCY2XtUcSR1d1Wilr
+
+Harrison, O. (2019, July 14). Machine Learning Basics with the K-Nearest Neighbors Algorithm. Retrieved from https://towardsdatascience.com/machine-learning-basics-with-the-k-nearest-neighbors-algorithm-6a6e71d01761
+
+
+
