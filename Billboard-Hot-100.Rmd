@@ -3,7 +3,7 @@ output: html_document
 url: {file:///Users/User/Documents/Methods_Dietrich/Methods_Final/Real_final.html}
 ---
 ##### Alex Riess
-##### May 9
+##### May 10
 
 ## Determining Music Genre Based on Billboard's Year-End Hot 100
 
